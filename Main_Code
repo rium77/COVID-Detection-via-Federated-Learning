@@ -1,0 +1,406 @@
+# import all required libraries 
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import torch.nn.parallel
+import torch.nn.functional as F
+import torchvision
+from torchvision import transforms
+import torch.optim as optim
+import torch.utils.data
+from torch.autograd import Variable
+import random
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_context("talk", font_scale=1.4)
+from fastai.vision import * #Dataset
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
+
+import fastai; fastai.__version__
+
+# give path to dataset of covid images
+path = 'data/COVID-19_Radiography_Dataset/'
+# explore the dataset folder
+image_dataset = torchvision.datasets.ImageFolder(root=path)
+# split the training and testing dataset 
+# 80% training data and 20% testing data
+train_dataset, test_dataset = train_test_split(image_dataset, test_size=0.2)
+
+# print the length of training dataset
+print(len(train_dataset))
+# print the length or size of testing data set
+print(len(test_dataset))
+
+# store the covid images in to separte variable and assign index
+class_num_covid = image_dataset.class_to_idx['COVID']
+
+# store the non covid images in to separte variable and assign index
+class_num_not_covid = image_dataset.class_to_idx['Non-Covid']
+
+# print the covid and non covid index
+print('Covid-19 Class: ', class_num_covid)
+print('Not-Covid-19 Class: ', class_num_not_covid)
+
+# prepare the transforms for training 
+train_transforms = transforms.Compose([
+    transforms.Resize((256, 256)),
+    transforms.ToTensor(),
+    transforms.Normalize(torch.Tensor([0.5, 0.5, 0.5]), torch.Tensor([0.5, 0.5, 0.5]))
+])
+
+# prepare the transforms for testing
+test_transforms = transforms.Compose([
+    transforms.Resize((256, 256)),
+    transforms.ToTensor(),
+    transforms.Normalize(torch.Tensor([0.5, 0.5, 0.5]), torch.Tensor([0.5, 0.5, 0.5]))
+])
+
+# set the training dataset parameters
+client_dataset = []
+for i in range(len(train_dataset)):
+    client_dataset.append((train_transforms(train_dataset[i][0]), torch.Tensor([1,0]) if train_dataset[i][1] == class_num_covid else torch.Tensor([0,1])))
+
+client_loader = torch.utils.data.DataLoader(dataset=client_dataset, batch_size=32)
+
+
+# import the required libraries for the deep learning
+import torch
+import urllib
+import zipfile
+import torchvision
+from torchvision import transforms
+from torchsummary import summary
+import torchvision.models
+import torchvision.models.convnext
+import torchvision.models as models
+
+# import the models
+model1 = models.convnext_tiny(pretrained=True)
+model2 = models.convnext_tiny(pretrained=True)
+
+# print the model structure
+print(model1)
+
+# set the parameters of model
+num_classes = 2
+model1.classifier[2] = nn.Linear(768, num_classes)
+model2.classifier[2] = nn.Linear(768, num_classes)
+
+# print the model structure
+print(model1)
+
+ct = 0
+ct2=0
+for child in model1.children():
+  ct += 1
+  print("Next")
+  for param in child.parameters():
+      ct2=ct2+1
+      print(param.requires_grad)
+  #print(child)
+print(ct)
+print(ct2)
+
+ct = 0
+for child in model2.children():
+  ct += 1
+  print("Next")
+  for param in child.parameters():
+      print(param.requires_grad)
+  #print(child)
+print(ct)
+
+ct=0
+for param in model1.parameters():
+  
+  if param.grad is not None:
+    ct=ct+1
+
+print(ct)
+
+ct=0
+for layer, param in model2.named_parameters():
+  
+  if param.grad is not None:
+    ct=ct+1
+
+print(ct)
+
+ct=0
+for layer, param in model2.named_parameters():
+  
+  if param.requires_grad==True:
+    ct=ct+1
+
+print(ct)
+
+import copy
+
+# function to compute classification matrix
+def c_mat(y_true, y_pred):
+    _t = [int(1 if i[0] < i[1] else 0) for i in y_true]
+    _p = [int(1 if i[0] < i[1] else 0) for i in y_pred]
+    tn, fp, fn, tp = confusion_matrix(_t, _p, labels=[0, 1]).ravel()
+    return tn, fp, fn, tp
+
+# optimizer class
+class Adam_Optimizer():
+    # function to intilize models parameters
+    def __init__(self, num_items,num_factors, beta_1=0.9, beta_2=0.99, gemma=0.003, epsilon=1e-8):
+        self.num_items = num_items
+        self.num_factors = num_factors
+        self.beta_1 = beta_1
+        self.beta_2 = beta_2
+        self.gemma = gemma
+        self.epsilon = epsilon
+        
+        self.m = np.zeros((self.num_items, self.num_factors))
+        self.v = np.zeros((self.num_items, self.num_factors))
+        self.t = 0
+    
+    # This method is used to calculate the gradient using Adam optimizer
+    def optimize_gradients(self, gradients):
+        
+        self.t += 1
+        
+        self.m = (self.beta_1 * self.m) + (1.0 - self.beta_1) * gradients           
+        self.v = (self.beta_2 * self.v) + (1.0 - self.beta_2) * np.square(gradients) 
+        
+        # Calculates the bias-corrected estimates
+        m_hat = self.m/(1.0 - (self.beta_1**self.t)) 
+        v_hat = self.v/(1.0 - (self.beta_2**self.t))  
+        
+        new_gradients = self.gemma * (m_hat) / (np.sqrt(v_hat) + self.epsilon) 
+        
+        return new_gradients
+    
+# Fedrated learning class
+class FL_Client():
+    # fucntion to intilize fedrated learning
+    def __init__(self, input , target):
+        self.input = input
+        self.target = target
+        self.ae = copy.deepcopy(model1)
+        self.criterion = nn.CrossEntropyLoss()
+        self.optimizer = optim.Adam(self.ae.parameters(), lr = 2e-5)
+        
+    # fucniton to take input and target value
+    def set_input_and_target(self, input , target):
+        self.input = input
+        self.target = target
+        
+    # function to train the model
+    def train_model(self):
+      self.optimizer.zero_grad()
+      output = self.ae(self.input)
+      self.target.requires_grad = False
+      tn, fp, fn, tp = c_mat(self.target, output)
+      loss = self.criterion(output, self.target)
+      loss.backward()
+      return loss.item(), tn, fp, fn, tp
+    
+    # function to get the grdaient parameters
+    def get_gradients(self):
+      with torch.no_grad():
+        gradients_arr = []
+        for param in self.ae.parameters():
+          if param.requires_grad==True:
+            grad = param.grad.numpy()
+            gradients_arr.append(grad)
+
+        return gradients_arr
+    
+    # fucntion to set the weights of model
+    def set_weights(self, weights):
+      #print(len(weights))
+      with torch.no_grad():
+        i = 0
+        for name, param in self.ae.named_parameters():
+          param.data = weights[i]
+          i += 1
+
+# Class of fedrated learning server
+class FL_Server():
+    # initlize values
+    def __init__(self):
+        #self.ae = AE()
+        #self.ae = model2
+        self.ae = copy.deepcopy(model2)
+        self.criterion = nn.CrossEntropyLoss()
+        self.optimizer = optim.Adam(self.ae.parameters(), lr = 2e-5)
+        self.dct = {} 
+        self.adam_optimizer = {}
+        self.new_grad = []
+
+        for layer, param in self.ae.named_parameters():
+          #if param.grad is not None:
+          if param.requires_grad==True:
+            self.dct[layer] = param.shape
+            shp = param.data.reshape(param.shape[0],-1).shape
+            self.adam_optimizer[layer] = Adam_Optimizer(shp[0], shp[1])
+        
+    def train_test_model_and_get_loss(self, input, target):
+      with torch.no_grad():
+        output = self.ae(input)
+        tn, fp, fn, tp = c_mat(target, output)
+        loss = self.criterion(output, target)
+        return loss.item(), tn, fp, fn, tp
+
+    def update_grad(self, grad_arr):
+      new_grad = grad_arr[0]
+      for grad in grad_arr:
+        i = -1
+        for layer, param in self.ae.named_parameters():
+          i += 1
+          new_grad[i] = self.adam_optimizer[layer].optimize_gradients(grad[i].reshape(param.shape[0],-1))
+      
+      with torch.no_grad():
+        self.optimizer.zero_grad()
+        i = -1
+        for layer, param in self.ae.named_parameters():
+          i += 1
+          param.grad = torch.Tensor(new_grad[i].reshape(self.dct[layer]))
+
+    def aggregate_grads(self, grad):
+      if len(self.new_grad)==0:
+        self.new_grad = [np.zeros_like(x) for x in grad]
+      for i in range(len(grad)):
+        self.new_grad[i]+=grad[i]
+
+    def update_grad_v2(self):
+
+      i = -1
+      for layer, param in self.ae.named_parameters():
+        if param.requires_grad==True:
+          i += 1
+          self.new_grad[i] = self.adam_optimizer[layer].optimize_gradients(self.new_grad[i].reshape(param.shape[0],-1))
+      
+      with torch.no_grad():
+        self.optimizer.zero_grad()
+        i = -1
+        for layer, param in self.ae.named_parameters():
+          if param.requires_grad==True:
+            i += 1
+            param.grad = torch.Tensor(self.new_grad[i].reshape(self.dct[layer]))
+
+      self.new_grad=[]
+
+
+    def update_grad_v3(self, grad_arr):
+      new_grad = [np.zeros_like(x) for x in grad_arr[0]]
+      for gradient in grad_arr:
+        for i in range(len(gradient)):
+          new_grad[i] += gradient[i]
+
+      for i in range(len(new_grad)):
+        new_grad[i] = new_grad[i] / len(grad_arr)
+
+      self.optimizer.zero_grad()
+      with torch.no_grad():
+        i = -1
+        for layer, param in self.ae.named_parameters():
+          i += 1
+          param.grad = torch.Tensor(new_grad[i])
+
+    def train_model(self):
+      ct=0
+      with torch.no_grad():
+        for layer, param in self.ae.named_parameters():
+          #if param.grad is not None:
+          if param.requires_grad==True: 
+            ct=ct+1
+            param.data -= param.grad
+      print("parameters trained: " + str(ct))
+
+    def train_model_v2(self):
+      self.optimizer.step()
+
+    def get_weights(self):
+      with torch.no_grad():
+        weights = []
+        for name, param in self.ae.named_parameters():
+          weights.append(param.data)
+        return weights
+
+train_dataset1, test_dataset1 = train_test_split(image_dataset, test_size=0.2, random_state=40)
+client_dataset1 = []
+for i in range(len(train_dataset1)):
+    client_dataset1.append((train_transforms(train_dataset1[i][0]), torch.Tensor([1,0]) if train_dataset1[i][1] == class_num_covid else torch.Tensor([0,1])))
+
+client_loader1 = torch.utils.data.DataLoader(dataset=client_dataset1, batch_size=32)
+
+# NUM OF CLIENTS = TOTAL IMAGES / BATCH SIZE
+fl_server = FL_Server()
+fl_iter = 50
+threshold = int(len(train_dataset1) / 10)
+train_loss_arr1 = []
+train_acc_arr1 = []
+train_prec_arr1 = []
+train_recall_arr1 = []
+train_f1_arr1 = []
+
+print("FL_ITER: ", fl_iter)
+print("NUM_CLIENTS_PER_FL_ITER: ", threshold)
+print("Batch Idx Size: ", len(client_loader1))
+
+
+for epoch in range(1, fl_iter + 1):
+  global_weights = fl_server.get_weights()
+  local_gradients = []
+  net_loss = 0
+  net_i = 0
+  tn = 0
+  fp = 0
+  fn = 0
+  tp = 0
+  count=0
+  _accuracy=0
+  _precision=0
+  _recall=0
+  _f1=0
+
+  clients_arr = []
+  for batch_idx, (train_features, train_labels) in enumerate(client_loader1):
+    clients_arr.append(FL_Client(train_features, train_labels))
+
+  length=len(clients_arr)
+
+  for j in range(length):
+    fl_client=clients_arr[0]
+    del clients_arr[0]
+    if epoch != 1:
+      fl_client.set_weights(copy.deepcopy(global_weights))
+    else:
+      print("Default client weights are used.")
+    local_loss, _tn, _fp, _fn, _tp = fl_client.train_model()
+    net_loss += local_loss
+    net_i += 1
+    tn += _tn
+    fp += _fp
+    fn += _fn
+    tp += _tp
+    _accuracy += (_tp+_tn)/(_tp+_fp+_tn+_fn)
+    _precision += _tp/(_tp+_fp)
+    _recall += _tp/(_tp+_fn)
+    _f1 += 2/((1/_recall) + (1/_precision))
+    count+=1
+    fl_server.aggregate_grads(fl_client.get_gradients())
+    print("--------Epoch ",epoch,"Client ", net_i,". Local Loss: ", local_loss, ". L-AC: ", _accuracy, ". L-P: ", _precision, ". L-R: ", _recall, ". L-F1: ", _f1)
+
+  fl_server.update_grad_v2()
+  fl_server.train_model()
+
+  loss = net_loss / net_i
+  train_loss_arr1.append(loss)
+  accuracy=_accuracy/count
+  precision=_precision/count
+  recall=_recall/count
+  f1=2/((1/recall) + (1/precision))
+  train_acc_arr1.append(accuracy)
+  train_prec_arr1.append(precision)
+  train_recall_arr1.append(recall)
+  train_f1_arr1.append(f1)
+
+  print("Epoch ", epoch, ". Loss: ", loss, ". Accuracy: ", accuracy, ". Precision: ", precision, ". Recall: ", recall, ". F1-Score: ", f1)
